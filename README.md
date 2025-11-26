@@ -36,7 +36,7 @@ cd win_app
 dotnet restore
 
 # Build the project
-dotnet build -c Release
+dotnet build AttendanceApp.sln -c Release
 
 # Run the app
 dotnet run
@@ -55,7 +55,7 @@ To create a standalone executable that works on any Windows machine without need
 
 ### Using Command Line:
 ```bash
-dotnet publish -c Release -r win-x64 --self-contained
+dotnet publish AttendanceApp.sln -c Release -r win-x64
 ```
 
 The executable will be in: `bin\Release\net6.0-windows\win-x64\publish\AttendanceApp.exe`
