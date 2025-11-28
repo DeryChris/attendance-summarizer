@@ -76,7 +76,7 @@ The executable will be in: `bin\Release\net6.0-windows\win-x64\publish\Attendanc
 ## Usage
 
 1. Run the application
-2. Click "Select CSV/XLSX Files" and choose your attendance files
+2. Click "Select CSV/XLSX Files" and choose your attendance files or Drag and Drop them
 3. Select the month and year
 4. Enter holiday count (if any)
 5. Click "Analyze & Generate" to process
