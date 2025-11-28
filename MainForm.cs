@@ -29,8 +29,8 @@ namespace AttendanceApp
         private void InitializeComponent()
         {
             this.Text = "Attendance Summarizer";
-            this.Size = new System.Drawing.Size(1000, 900);
-            this.MinimumSize = new System.Drawing.Size(800, 700);
+            this.Size = new System.Drawing.Size(1000, 980);
+            this.MinimumSize = new System.Drawing.Size(800, 780);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.Font = new System.Drawing.Font("Segoe UI", 10);
             this.Padding = new Padding(10);
@@ -45,7 +45,7 @@ namespace AttendanceApp
             this.Controls.Add(mainPanel);
             this.mainPanel = mainPanel;
 
-            // Results section (add first so it appears last)
+            // Results section (add first)
             var resultsGroupBox = new GroupBox
             {
                 Text = "Preview",
@@ -78,15 +78,25 @@ namespace AttendanceApp
             };
             mainPanel.Controls.Add(uploadGroupBox);
 
-            // Title (add last so it appears first)
+            // Title panel (add last so it appears at top)
+            var titlePanel = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 60,
+                Margin = new Padding(0, 0, 0, 10)
+            };
+            mainPanel.Controls.Add(titlePanel);
+
+            // Title label (centered in panel)
             var titleLabel = new Label
             {
                 Text = "Attendance Summarizer",
                 Font = new System.Drawing.Font("Segoe UI", 16, System.Drawing.FontStyle.Bold),
-                AutoSize = true,
-                Margin = new Padding(0, 0, 0, 10)
+                AutoSize = false,
+                TextAlign = System.Drawing.ContentAlignment.MiddleCenter,
+                Dock = DockStyle.Fill
             };
-            mainPanel.Controls.Add(titleLabel);
+            titlePanel.Controls.Add(titleLabel);
 
             // Drag and drop zone panel
             var dragDropPanel = new Panel
@@ -453,7 +463,7 @@ namespace AttendanceApp
             // Info card panel (hidden by default, wider for side-by-side layout)
             var infoCardPanel = new Panel
             {
-                Width = 400,
+                Width = 200,
                 Height = 0,
                 BackColor = System.Drawing.Color.White,
                 BorderStyle = BorderStyle.FixedSingle,
@@ -479,7 +489,7 @@ namespace AttendanceApp
             
             // Initialize timer for info card animation
             infoCardTimer = new Timer();
-            infoCardTimer.Interval = 20;
+            infoCardTimer.Interval = 10;
             infoCardTimer.Tick += InfoCardTimer_Tick;
 
             // Initialize spinner timer
@@ -550,7 +560,7 @@ namespace AttendanceApp
         private Button infoButton;
         private Timer infoCardTimer;
         private bool infoCardExpanded = false;
-        private const int INFO_CARD_MAX_HEIGHT = 350;
+        private const int INFO_CARD_MAX_HEIGHT = 260;
         private Panel spinnerPanel;
         private Label spinnerLabel;
         private Timer spinnerTimer;
