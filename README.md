@@ -1,99 +1,101 @@
-# Attendance Summarizer - C# Windows App
+# Attendance Summarizer – Windows C# Application
 
-A native Windows Forms application for processing and summarizing attendance records from CSV/XLSX files.
+Attendance data is one of the most sensitive datasets inside a company, yet many HR and operations teams still rely on manual spreadsheets and endless VLOOKUPs to understand who was present, missing, or late. The Attendance Summarizer turns raw CSV/XLSX exports into polished, department-aware insights in a few clicks, eliminating the tedious, error-prone work of stitching together daily logs.
+
+## Problem Statement
+
+> When a company’s attendance data is extracted for analysis—especially when the review must happen per employee across multiple departments—the process becomes exhausting, repetitive, and slow if handled manually. Analysts lose time reconciling formats, leaders wait for answers, and data quality suffers.
+
+The goal of this project is to give HR, operations, and compliance teams an automated, reliable way to transform raw device logs into actionable summaries they can trust.
+
+## Solution Overview
+
+- Automates ingestion of multiple CSV/XLSX attendance exports at once.
+- Applies smart column detection so it works with differing templates from biometric devices or HR suites.
+- Lets reviewers select the target month, working days, and exceptional holidays before analysis starts.
+- Generates a clean Excel workbook segmented by department so leaders can consume the results immediately.
+- Highlights anomalies such as missing clock-ins without additional configuration.
+
+The result: a repeatable, auditable pipeline that takes minutes instead of hours and scales with your workforce.
+
+## Key Capabilities
+
+- Multi-file import with drag-and-drop or file picker.
+- Month/year selectors plus manual holiday overrides to keep calendars accurate.
+- Automatic mapping of core attendance columns (Person ID, Name, Date, Check-in, Check-out, Department) even when headers vary.
+- Aggregation logic that consolidates an employee’s records across every department.
+- Professionally formatted Excel output featuring:
+  - Department banners (purple, bold) for quick scanning.
+  - Bordered tabular data prepped for sharing.
+  - Computed “Not Clock In” metrics and customizable working-day totals.
+
+## Typical Workflow
+
+1. Launch the application.
+2. Click **Select CSV/XLSX Files** (or drag and drop) to load one or many exports.
+3. Choose the month and year you want to summarize.
+4. Enter the number of company holidays for that period.
+5. Hit **Analyze & Generate** to preview the compiled results.
+6. Explore the preview grid for spot checks.
+7. Click **Download Excel** to save the polished report for stakeholders.
 
 ## System Requirements
 
-- Windows 10 or later (x64)
-- .NET 6.0 Runtime (or Visual Studio 2022 Community Edition)
+- Windows 10 or newer (x64)
+- .NET 6.0 Runtime (installed automatically with Visual Studio 2022 Community)
 
-## Building the Application
+## Getting Started
 
-### Option 1: Using Visual Studio 2022 (Recommended)
+### Option 1: Visual Studio 2022 (Recommended)
+1. Install **Visual Studio 2022 Community Edition** with the “.NET desktop development” workload.
+2. Open the repository folder (`win_app`) via *File ▸ Open ▸ Folder*.
+3. Restore packages: right-click `AttendanceApp.csproj` ▸ **Restore NuGet Packages**.
+4. Build: *Build ▸ Build Solution* (`Ctrl+Shift+B`).
+5. Run: *Debug ▸ Start Debugging* (`F5`).
 
-1. Download and install **Visual Studio 2022 Community Edition** (free):
-   - Include ".NET desktop development" workload during installation
-   
-2. Open the solution:
-   - File > Open > Folder, select the `win_app` folder
-   
-3. Restore NuGet packages:
-   - Right-click on `AttendanceApp.csproj` > Restore NuGet Packages
-   
-4. Build:
-   - Build > Build Solution (Ctrl+Shift+B)
-   
-5. Run:
-   - Debug > Start Debugging (F5)
-
-### Option 2: Using Command Line
-
+### Option 2: .NET CLI
 ```bash
-# Navigate to the win_app folder
 cd win_app
-
-# Restore dependencies
 dotnet restore
-
-# Build the project
 dotnet build AttendanceApp.sln -c Release
-
-# Run the app
 dotnet run
 ```
 
-## Publishing as an .EXE
+## Publishing a Standalone `.exe`
 
-To create a standalone executable that works on any Windows machine without needing .NET installed:
+### Visual Studio Publish Profile
+1. Right-click `AttendanceApp.csproj`.
+2. Choose **Publish** ▸ Target = **Folder**.
+3. Select **Self-contained**, configuration **Release**.
+4. Publish to generate a distributable `.exe`.
 
-### Using Visual Studio:
-1. Right-click on `AttendanceApp.csproj`
-2. Select "Publish"
-3. Choose "Folder" target
-4. Select "Self-contained" and Release
-5. Publish - this creates a standalone `.exe` file
-
-### Using Command Line:
+### Command Line Publish
 ```bash
 dotnet publish AttendanceApp.sln -c Release -r win-x64
 ```
 
-The executable will be in: `bin\Release\net6.0-windows\win-x64\publish\AttendanceApp.exe`
+Output path: `bin\Release\net6.0-windows\win-x64\publish\AttendanceApp.exe`
 
-## Features
+## Architecture at a Glance
 
-- Upload multiple CSV or XLSX attendance files
-- Select month and year for processing
-- Override holiday count
-- Automatic column detection (Person ID, Name, Date, Check-in, Check-out, Department)
-- Aggregates attendance data by person across all departments
-- Generates professional Excel summary with:
-  - Department headers (purple, bold)
-  - Formatted data with borders
-  - Automatic "Not Clock In" calculations
-  - Customizable working days
-
-## Usage
-
-1. Run the application
-2. Click "Select CSV/XLSX Files" and choose your attendance files or Drag and Drop them
-3. Select the month and year
-4. Enter holiday count (if any)
-5. Click "Analyze & Generate" to process
-6. Review the preview
-7. Click "Download Excel" to save the summary file
-
-## File Structure
-
-- `Program.cs` - Application entry point
-- `MainForm.cs` - Main UI window
-- `AttendanceParser.cs` - CSV parsing and business logic
-- `ExcelHelper.cs` - Excel workbook generation
-- `AttendanceApp.csproj` - Project configuration
+- `Program.cs` – Application entry point.
+- `MainForm.cs` – Windows Forms UI, event handling, and user workflow.
+- `AttendanceParser.cs` – Parsing pipeline, validation, and aggregation logic.
+- `ExcelHelper.cs` – ClosedXML-powered report builder.
+- `AttendanceApp.csproj` – Project configuration and dependencies.
 
 ## Dependencies
 
-- **ClosedXML** - Excel file generation
-- **CsvHelper** - CSV parsing
+- **ClosedXML** for Excel generation.
+- **CsvHelper** for resilient CSV parsing.
 
-These are automatically installed via NuGet when building.
+Both packages restore automatically via NuGet—no manual setup required.
+
+## Why Teams Choose This App
+
+- **Speed:** Turn around department-ready attendance summaries in minutes.
+- **Accuracy:** Enforce consistent business rules every time, reducing spreadsheet mistakes.
+- **Scalability:** Supports large data sets and multiple data sources without extra setup.
+- **Shareability:** Produces boardroom-friendly Excel workbooks that managers and auditors expect.
+
+If your organization still burns hours reconciling attendance data by hand, the Attendance Summarizer is the fastest path to clarity and confidence.
