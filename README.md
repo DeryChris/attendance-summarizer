@@ -354,8 +354,8 @@ Built with:
 ## 📌 Version Information
 
 - **Current Version**: 1.0.0
-- **Release Date**: 2024
-- **Last Updated**: January 2024
+- **Release Date**: 26 November, 2025
+- **Last Updated**: 28 November, 2025
 - **Status**: Stable Release
 
 ---
