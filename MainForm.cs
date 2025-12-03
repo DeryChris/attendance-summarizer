@@ -372,7 +372,7 @@ namespace AttendanceApp
 
             var analyzeButton = new Button
             {
-                Text = "Analyze & Generate",
+                Text = "Analyze",
                 Dock = DockStyle.Left,
                 Width = 150,
                 BackColor = System.Drawing.Color.FromArgb(59, 130, 246),
