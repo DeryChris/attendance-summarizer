@@ -1,1012 +1,863 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows.Forms;
-using System.Drawing;
 
 namespace AttendanceApp
 {
     public partial class MainForm : Form
     {
+        // ── Data ──
         private List<string> uploadedFiles = new List<string>();
-        private const int BUTTON_PADDING = 10;
+        private byte[] excelBytes;
 
-        public MainForm()
-        {
-            try
-            {
-                InitializeComponent();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error initializing form: {ex.Message}\n\n{ex.StackTrace}", "Initialization Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                throw;
-            }
-        }
-
-        private void InitializeComponent()
-        {
-            this.Text = "Attendance Summarizer";
-            this.Size = new System.Drawing.Size(1000, 980);
-            this.MinimumSize = new System.Drawing.Size(800, 780);
-            this.StartPosition = FormStartPosition.CenterScreen;
-            this.Font = new System.Drawing.Font("Segoe UI", 10);
-            this.Padding = new Padding(10);
-
-            // Main panel with automatic scroll
-            var mainPanel = new Panel
-            {
-                Dock = DockStyle.Fill,
-                Padding = new Padding(10),
-                AutoScroll = true
-            };
-            this.Controls.Add(mainPanel);
-            this.mainPanel = mainPanel;
-
-            // Results section (add first)
-            var resultsGroupBox = new GroupBox
-            {
-                Text = "Preview",
-                Dock = DockStyle.Top,
-                Height = 280,
-                Padding = new Padding(10),
-                Margin = new Padding(0, 0, 0, 10)
-            };
-            mainPanel.Controls.Add(resultsGroupBox);
-
-            // Settings section
-            var settingsGroupBox = new GroupBox
-            {
-                Text = "Settings",
-                Dock = DockStyle.Top,
-                Height = 120,
-                Padding = new Padding(10),
-                Margin = new Padding(0, 0, 0, 10)
-            };
-            mainPanel.Controls.Add(settingsGroupBox);
-
-            // Upload section
-            var uploadGroupBox = new GroupBox
-            {
-                Text = "Upload Files",
-                Dock = DockStyle.Top,
-                Height = 300,
-                Padding = new Padding(10),
-                Margin = new Padding(0, 0, 0, 10)
-            };
-            mainPanel.Controls.Add(uploadGroupBox);
-
-            // Title panel (add last so it appears at top)
-            var titlePanel = new Panel
-            {
-                Dock = DockStyle.Top,
-                Height = 60,
-                Margin = new Padding(0, 0, 0, 10)
-            };
-            mainPanel.Controls.Add(titlePanel);
-
-            // Title label (centered in panel)
-            var titleLabel = new Label
-            {
-                Text = "Attendance Summarizer",
-                Font = new System.Drawing.Font("Segoe UI", 16, System.Drawing.FontStyle.Bold),
-                AutoSize = false,
-                TextAlign = System.Drawing.ContentAlignment.MiddleCenter,
-                Dock = DockStyle.Fill
-            };
-            titlePanel.Controls.Add(titleLabel);
-
-            // Drag and drop zone panel
-            var dragDropPanel = new Panel
-            {
-                Dock = DockStyle.Fill,
-                BackColor = System.Drawing.Color.FromArgb(240, 248, 255),
-                AllowDrop = true,
-                AutoScroll = true,
-                BorderStyle = BorderStyle.FixedSingle,
-                Name = "dragDropPanel",
-                Margin = new Padding(0)
-            };
-            dragDropPanel.Paint += (s, e) =>
-            {
-                // Draw dashed border
-                var pen = new System.Drawing.Pen(System.Drawing.Color.FromArgb(100, 150, 220), 2)
-                {
-                    DashStyle = System.Drawing.Drawing2D.DashStyle.Dash
-                };
-                e.Graphics.DrawRectangle(pen, 1, 1, dragDropPanel.Width - 3, dragDropPanel.Height - 3);
-                pen.Dispose();
-            };
-            dragDropPanel.DragEnter += (s, e) =>
-            {
-                if (e.Data.GetDataPresent(DataFormats.FileDrop))
-                {
-                    e.Effect = DragDropEffects.Copy;
-                    dragDropPanel.BackColor = System.Drawing.Color.FromArgb(220, 240, 255);
-                    dragDropPanel.Invalidate();
-                }
-            };
-            dragDropPanel.DragLeave += (s, e) =>
-            {
-                dragDropPanel.BackColor = System.Drawing.Color.FromArgb(240, 248, 255);
-                dragDropPanel.Invalidate();
-            };
-            dragDropPanel.DragDrop += (s, e) =>
-            {
-                dragDropPanel.BackColor = System.Drawing.Color.FromArgb(240, 248, 255);
-                dragDropPanel.Invalidate();
-                if (e.Data.GetDataPresent(DataFormats.FileDrop))
-                {
-                    var files = (string[])e.Data.GetData(DataFormats.FileDrop);
-                    var validFiles = files.Where(f => f.EndsWith(".csv", StringComparison.OrdinalIgnoreCase)
-                        || f.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase)).ToList();
-                    if (validFiles.Count > 0)
-                    {
-                        uploadedFiles = validFiles;
-                        UpdateFileListBox();
-                    }
-                    else
-                    {
-                        MessageBox.Show("Please drop only CSV or XLSX files.", "Invalid Files", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    }
-                }
-            };
-            uploadGroupBox.Controls.Add(dragDropPanel);
-            this.dragDropPanel = dragDropPanel;
-
-            // Header panel for buttons and label
-            var headerPanel = new Panel
-            {
-                Dock = DockStyle.Top,
-                Height = 50,
-                Padding = new Padding(5),
-                Margin = new Padding(0),
-                BackColor = System.Drawing.Color.FromArgb(240, 248, 255)
-            };
-            dragDropPanel.Controls.Add(headerPanel);
-
-            // Drag and drop instruction label
-            var dragDropLabel = new Label
-            {
-                Text = "📁 Drag and drop files here",
-                Dock = DockStyle.Fill,
-                Font = new System.Drawing.Font("Segoe UI", 10, System.Drawing.FontStyle.Regular),
-                ForeColor = System.Drawing.Color.FromArgb(100, 100, 100),
-                TextAlign = System.Drawing.ContentAlignment.MiddleLeft,
-                Margin = new Padding(5, 0, 0, 0)
-            };
-            headerPanel.Controls.Add(dragDropLabel);
-
-            // Button panel for organizing buttons
-            var buttonPanel = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Right,
-                Width = 230,
-                Height = 50,
-                FlowDirection = FlowDirection.RightToLeft,
-                WrapContents = false,
-                Padding = new Padding(0),
-                Margin = new Padding(0),
-                BackColor = System.Drawing.Color.FromArgb(240, 248, 255)
-            };
-            headerPanel.Controls.Add(buttonPanel);
-
-            // Clear button inside drop zone
-            var clearButton = new Button
-            {
-                Text = "Clear All",
-                Width = 100,
-                Height = 40,
-                BackColor = System.Drawing.Color.FromArgb(220, 38, 38),
-                ForeColor = System.Drawing.Color.White,
-                Font = new System.Drawing.Font("Segoe UI", 9, System.Drawing.FontStyle.Bold),
-                Margin = new Padding(5),
-                FlatStyle = FlatStyle.Flat
-            };
-            clearButton.Click += (s, e) => ClearFiles();
-            buttonPanel.Controls.Add(clearButton);
-
-            // Browse button inside drop zone
-            var uploadButton = new Button
-            {
-                Text = "Browse",
-                Width = 100,
-                Height = 40,
-                BackColor = System.Drawing.Color.FromArgb(59, 130, 246),
-                ForeColor = System.Drawing.Color.White,
-                Font = new System.Drawing.Font("Segoe UI", 9, System.Drawing.FontStyle.Bold),
-                Margin = new Padding(5),
-                FlatStyle = FlatStyle.Flat
-            };
-            uploadButton.Click += (s, e) => UploadFiles();
-            buttonPanel.Controls.Add(uploadButton);
-
-            // File chips panel
-            var chipsPanel = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                BackColor = System.Drawing.Color.Transparent,
-                AutoScroll = true,
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = true,
-                Name = "chipsPanel",
-                Margin = new Padding(0),
-                Padding = new Padding(5)
-            };
-            dragDropPanel.Controls.Add(chipsPanel);
-            this.chipsPanel = chipsPanel;
-
-            // Create a responsive flow panel for settings controls
-            var settingsPanel = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false,
-                AutoScroll = false,
-                Padding = new Padding(0),
-                Margin = new Padding(0)
-            };
-            settingsGroupBox.Controls.Add(settingsPanel);
-
-            // Month section
-            var monthLabel = new Label
-            {
-                Text = "Month:",
-                AutoSize = true,
-                Font = new System.Drawing.Font("Segoe UI", 9),
-                Margin = new Padding(0, 5, 5, 5)
-            };
-            settingsPanel.Controls.Add(monthLabel);
-
-            var monthComboBox = new ComboBox
-            {
-                Width = 180,
-                Height = 30,
-                DropDownStyle = ComboBoxStyle.DropDownList,
-                Margin = new Padding(0, 0, 20, 0)
-            };
-            for (int i = 1; i <= 12; i++)
-                monthComboBox.Items.Add(CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(i));
-            monthComboBox.SelectedIndex = DateTime.Now.Month - 1;
-            settingsPanel.Controls.Add(monthComboBox);
-            this.monthComboBox = monthComboBox;
-
-            // Year section
-            var yearLabel = new Label
-            {
-                Text = "Year:",
-                AutoSize = true,
-                Font = new System.Drawing.Font("Segoe UI", 9),
-                Margin = new Padding(0, 5, 5, 5)
-            };
-            settingsPanel.Controls.Add(yearLabel);
-
-            var yearInput = new NumericUpDown
-            {
-                Width = 100,
-                Height = 30,
-                Minimum = 2000,
-                Maximum = 2100,
-                Value = DateTime.Now.Year,
-                Margin = new Padding(0, 0, 20, 0)
-            };
-            settingsPanel.Controls.Add(yearInput);
-            this.yearInput = yearInput;
-
-            // Holiday section
-            var holidayLabel = new Label
-            {
-                Text = "Holiday Count:",
-                AutoSize = true,
-                Font = new System.Drawing.Font("Segoe UI", 9),
-                Margin = new Padding(0, 5, 5, 5)
-            };
-            settingsPanel.Controls.Add(holidayLabel);
-
-            var holidayInput = new NumericUpDown
-            {
-                Width = 100,
-                Height = 30,
-                Minimum = 0,
-                Maximum = 31,
-                Value = 0,
-                Margin = new Padding(0, 0, 0, 0)
-            };
-            settingsPanel.Controls.Add(holidayInput);
-            this.holidayInput = holidayInput;
-
-            // Add results controls to the resultsGroupBox
-            var dataGridView = new DataGridView
-            {
-                Dock = DockStyle.Fill,
-                ReadOnly = true,
-                AllowUserToAddRows = false,
-                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.AllCells,
-                BackgroundColor = System.Drawing.Color.White,
-                Margin = new Padding(0),
-                AlternatingRowsDefaultCellStyle = new DataGridViewCellStyle
-                {
-                    BackColor = System.Drawing.Color.FromArgb(240, 240, 240)
-                }
-            };
-            resultsGroupBox.Controls.Add(dataGridView);
-            this.dataGridView = dataGridView;
-
-            // Loading spinner panel (overlay)
-            var spinnerPanel = new Panel
-            {
-                Dock = DockStyle.Fill,
-                Visible = false,
-                BackColor = System.Drawing.Color.FromArgb(240, 248, 255),
-                Name = "spinnerPanel"
-            };
-            resultsGroupBox.Controls.Add(spinnerPanel);
-            this.spinnerPanel = spinnerPanel;
-
-            // Loading spinner label (hidden by default)
-            var spinnerLabel = new Label
-            {
-                Text = "⠋",
-                Font = new System.Drawing.Font("Segoe UI", 48, System.Drawing.FontStyle.Bold),
-                ForeColor = System.Drawing.Color.FromArgb(59, 130, 246),
-                TextAlign = System.Drawing.ContentAlignment.MiddleCenter,
-                Dock = DockStyle.Fill,
-                Visible = false,
-                BackColor = System.Drawing.Color.Transparent,
-                Name = "spinnerLabel"
-            };
-            spinnerPanel.Controls.Add(spinnerLabel);
-            this.spinnerLabel = spinnerLabel;
-
-            // Action buttons
-            var actionPanel = new Panel
-            {
-                Dock = DockStyle.Bottom,
-                Height = 60,
-                Padding = new Padding(10),
-                Margin = new Padding(0)
-            };
-            mainPanel.Controls.Add(actionPanel);
-
-            var analyzeButton = new Button
-            {
-                Text = "Analyze",
-                Dock = DockStyle.Left,
-                Width = 150,
-                BackColor = System.Drawing.Color.FromArgb(59, 130, 246),
-                ForeColor = System.Drawing.Color.White,
-                Font = new System.Drawing.Font("Segoe UI", 10, System.Drawing.FontStyle.Bold),
-                Margin = new Padding(5)
-            };
-            analyzeButton.Click += (s, e) => AnalyzeFiles();
-            actionPanel.Controls.Add(analyzeButton);
-
-            var downloadButton = new Button
-            {
-                Text = "Download Excel",
-                Dock = DockStyle.Right,
-                Width = 150,
-                BackColor = System.Drawing.Color.FromArgb(34, 197, 94),
-                ForeColor = System.Drawing.Color.White,
-                Font = new System.Drawing.Font("Segoe UI", 10, System.Drawing.FontStyle.Bold),
-                Enabled = false,
-                Margin = new Padding(5)
-            };
-            downloadButton.Click += (s, e) => DownloadExcel();
-            actionPanel.Controls.Add(downloadButton);
-            this.downloadButton = downloadButton;
-
-            var exitButton = new Button
-            {
-                Text = "Exit",
-                Dock = DockStyle.Right,
-                Width = 120,
-                BackColor = System.Drawing.Color.FromArgb(229, 231, 235),
-                Font = new System.Drawing.Font("Segoe UI", 10),
-                Margin = new Padding(5)
-            };
-            exitButton.Click += (s, e) => this.Close();
-            actionPanel.Controls.Add(exitButton);
-
-            // Progress bar
-            var progressBar = new ProgressBar
-            {
-                Dock = DockStyle.Bottom,
-                Height = 3,
-                Style = ProgressBarStyle.Marquee,
-                Visible = false,
-                Margin = new Padding(0)
-            };
-            mainPanel.Controls.Add(progressBar);
-            this.progressBar = progressBar;
-
-            // Status bar
-            var statusBar = new StatusStrip
-            {
-                Dock = DockStyle.Bottom,
-                SizingGrip = false,
-                BackColor = System.Drawing.Color.FromArgb(240, 240, 240),
-                ForeColor = System.Drawing.Color.FromArgb(64, 64, 64)
-            };
-            this.Controls.Add(statusBar);
-
-            var statusLabel = new ToolStripStatusLabel
-            {
-                Text = "Ready",
-                AutoSize = true,
-                Font = new System.Drawing.Font("Segoe UI", 9),
-                ForeColor = System.Drawing.Color.Green,
-                Spring = true,
-                TextAlign = System.Drawing.ContentAlignment.MiddleLeft
-            };
-            statusBar.Items.Add(statusLabel);
-            this.statusLabel = statusLabel;
-
-            // Info button in action panel - simple text button
-            var infoButton = new Button
-            {
-                Size = new System.Drawing.Size(45, 40),
-                FlatStyle = FlatStyle.Flat,
-                Cursor = Cursors.Hand,
-                Dock = DockStyle.Left,
-                Margin = new Padding(5),
-                Text = "ⓘ",
-                Font = new System.Drawing.Font("Segoe UI", 14, System.Drawing.FontStyle.Bold)
-            };
-            infoButton.FlatAppearance.BorderSize = 0;
-
-            actionPanel.Controls.Add(infoButton);
-            this.infoButton = infoButton;
-
-            // Info card panel (hidden by default, wider for side-by-side layout)
-            var infoCardPanel = new Panel
-            {
-                Width = 200,
-                Height = 0,
-                BackColor = System.Drawing.Color.White,
-                BorderStyle = BorderStyle.FixedSingle,
-                Location = new System.Drawing.Point(10, 65),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left,
-                Visible = true,
-                Tag = "infoCard",
-                AutoScroll = false
-            };
-            infoCardPanel.Paint += (s, e) =>
-            {
-                e.Graphics.Clear(System.Drawing.Color.White);
-                var border = new Pen(System.Drawing.Color.FromArgb(59, 130, 246), 2);
-                e.Graphics.DrawRectangle(border, 0, 0, infoCardPanel.Width - 1, infoCardPanel.Height - 1);
-                border.Dispose();
-            };
-            this.Controls.Add(infoCardPanel);
-            infoCardPanel.BringToFront();
-            this.infoCardPanel = infoCardPanel;
-
-            // Register click handler for info button
-            infoButton.Click += (s, e) => ToggleInfoCard();
-            
-            // Initialize timer for info card animation
-            infoCardTimer = new Timer();
-            infoCardTimer.Interval = 10;
-            infoCardTimer.Tick += InfoCardTimer_Tick;
-
-            // Initialize spinner timer
-            spinnerTimer = new Timer();
-            spinnerTimer.Interval = 80;
-            spinnerTimer.Tick += SpinnerTimer_Tick;
-
-            // Add key down handler to close info card with Escape
-            this.KeyDown += (s, e) =>
-            {
-                if (e.KeyCode == Keys.Escape && infoCardExpanded)
-                {
-                    infoCardExpanded = false;
-                    if (infoCardTimer != null)
-                    {
-                        infoCardTimer.Start();
-                    }
-                    e.Handled = true;
-                }
-            };
-
-            // Add click handlers to close info card
-            AddClickHandlerRecursive(this);
-        }
-
-        private void AddClickHandlerRecursive(Control parent)
-        {
-            foreach (Control control in parent.Controls)
-            {
-                // Skip the info card and info button themselves
-                if (control == infoCardPanel || control == infoButton)
-                {
-                    continue;
-                }
-
-                control.Click += (s, e) =>
-                {
-                    if (infoCardExpanded)
-                    {
-                        infoCardExpanded = false;
-                        if (infoCardTimer != null)
-                        {
-                            infoCardTimer.Start();
-                        }
-                    }
-                };
-
-                // Recursively add handlers to child controls
-                if (control.HasChildren)
-                {
-                    AddClickHandlerRecursive(control);
-                }
-            }
-        }
-
+        // ── Controls ──
         private Panel mainPanel;
         private Panel dragDropPanel;
         private FlowLayoutPanel chipsPanel;
         private ComboBox monthComboBox;
         private NumericUpDown yearInput;
         private NumericUpDown holidayInput;
-        private ToolStripStatusLabel statusLabel;
-        private ProgressBar progressBar;
+        private Label statusLabel;
+        private Panel progressBar;
         private DataGridView dataGridView;
         private Button downloadButton;
-        private byte[] excelBytes;
-        private Panel infoCardPanel;
-        private Button infoButton;
-        private Timer infoCardTimer;
-        private bool infoCardExpanded = false;
-        private const int INFO_CARD_MAX_HEIGHT = 260;
+        private Button analyzeButton;
         private Panel spinnerPanel;
         private Label spinnerLabel;
         private Timer spinnerTimer;
         private int spinnerIndex = 0;
         private readonly string[] spinnerFrames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
 
-        private void UpdateFileListBox()
+        // ── Theme ──
+        private static readonly Color BgDark       = Color.FromArgb(18, 18, 30);
+        private static readonly Color BgCard       = Color.FromArgb(26, 28, 44);
+        private static readonly Color BgInput      = Color.FromArgb(36, 38, 58);
+        private static readonly Color AccentBlue   = Color.FromArgb(70, 130, 255);
+        private static readonly Color AccentGreen  = Color.FromArgb(40, 200, 110);
+        private static readonly Color AccentRed    = Color.FromArgb(230, 70, 70);
+        private static readonly Color AccentOrange = Color.FromArgb(255, 165, 50);
+        private static readonly Color TextPrimary  = Color.FromArgb(225, 228, 238);
+        private static readonly Color TextMuted    = Color.FromArgb(120, 125, 150);
+        private static readonly Color Border       = Color.FromArgb(45, 48, 70);
+        private static readonly Color ChipBg       = Color.FromArgb(50, 95, 190);
+        private static readonly Color DropZoneBg   = Color.FromArgb(22, 24, 40);
+
+        public MainForm()
         {
-            chipsPanel.Controls.Clear();
-            foreach (var file in uploadedFiles)
+            InitializeComponent();
+        }
+
+        private void InitializeComponent()
+        {
+            this.SuspendLayout();
+
+            this.Text = "Attendance Summarizer";
+            this.StartPosition = FormStartPosition.CenterScreen;
+            this.Font = new Font("Segoe UI", 9.5f);
+            this.BackColor = BgDark;
+            this.ForeColor = TextPrimary;
+            this.DoubleBuffered = true;
+            this.Padding = new Padding(0);
+            this.AutoScaleMode = AutoScaleMode.Dpi;
+
+            // ── Set a comfortable default size, allow resize ──
+            this.ClientSize = new Size(940, 700);
+            this.MinimumSize = new Size(780, 560);
+
+            BuildLayout();
+
+            this.ResumeLayout(false);
+        }
+
+        private void BuildLayout()
+        {
+            // ══════════════════════════════════════════
+            //  MAIN CONTENT AREA (added first — Fill)
+            // ══════════════════════════════════════════
+            mainPanel = new Panel
             {
-                CreateFileChip(file);
+                Dock = DockStyle.Fill,
+                Padding = new Padding(24, 16, 24, 16),
+                BackColor = BgDark
+            };
+            this.Controls.Add(mainPanel);
+
+            // ── Progress accent line (added after Fill) ──
+            progressBar = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 2,
+                BackColor = AccentBlue,
+                Visible = false
+            };
+            this.Controls.Add(progressBar);
+
+            // ══════════════════════════════════════════
+            //  STATUS BAR (added last — docks first)
+            // ══════════════════════════════════════════
+            var statusBar = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 30,
+                BackColor = Color.FromArgb(14, 14, 24),
+                Padding = new Padding(18, 0, 18, 0)
+            };
+            statusLabel = new Label
+            {
+                Text = "● Ready",
+                Dock = DockStyle.Fill,
+                Font = new Font("Segoe UI", 8.5f),
+                ForeColor = AccentGreen,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            statusBar.Controls.Add(statusLabel);
+            this.Controls.Add(statusBar);
+
+            // ────────────────────────────
+            //  We use a TableLayoutPanel for the main body so that
+            //  the top sections have fixed heights and the preview
+            //  section stretches to fill remaining space.
+            // ────────────────────────────
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0),
+                Padding = new Padding(0)
+            };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+
+            // Row 0: Title        – fixed 50px
+            // Row 1: Upload       – fixed 210px
+            // Row 2: Settings     – fixed 70px
+            // Row 3: Preview      – fill remaining
+            // Row 4: Actions      – fixed 52px
+            layout.RowCount = 5;
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 210));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 70));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
+
+            // ── Row 0: Title ──
+            var titlePanel = BuildTitlePanel();
+            layout.Controls.Add(titlePanel, 0, 0);
+
+            // ── Row 1: Upload ──
+            var uploadCard = BuildUploadSection();
+            layout.Controls.Add(uploadCard, 0, 1);
+
+            // ── Row 2: Settings ──
+            var settingsCard = BuildSettingsSection();
+            layout.Controls.Add(settingsCard, 0, 2);
+
+            // ── Row 3: Preview (fills remaining) ──
+            var previewCard = BuildPreviewSection();
+            layout.Controls.Add(previewCard, 0, 3);
+
+            // ── Row 4: Action buttons ──
+            var actionPanel = BuildActionPanel();
+            layout.Controls.Add(actionPanel, 0, 4);
+
+            mainPanel.Controls.Add(layout);
+
+            // ── Spinner timer ──
+            spinnerTimer = new Timer { Interval = 80 };
+            spinnerTimer.Tick += (s, e) =>
+            {
+                if (spinnerLabel != null && spinnerLabel.Visible)
+                {
+                    spinnerLabel.Text = spinnerFrames[spinnerIndex];
+                    spinnerIndex = (spinnerIndex + 1) % spinnerFrames.Length;
+                }
+            };
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        //  SECTION BUILDERS
+        // ══════════════════════════════════════════════════════════════
+
+        private Panel BuildTitlePanel()
+        {
+            var panel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0, 0, 0, 4)
+            };
+
+            var title = new Label
+            {
+                Text = "Attendance Summarizer",
+                Font = new Font("Segoe UI", 18, FontStyle.Bold),
+                ForeColor = TextPrimary,
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(2, 0, 0, 0)
+            };
+            panel.Controls.Add(title);
+
+            var ver = new Label
+            {
+                Text = "v1.1",
+                Font = new Font("Segoe UI", 8.5f),
+                ForeColor = TextMuted,
+                Dock = DockStyle.Right,
+                Width = 40,
+                TextAlign = ContentAlignment.MiddleCenter
+            };
+            panel.Controls.Add(ver);
+
+            return panel;
+        }
+
+        private Panel BuildUploadSection()
+        {
+            var card = MakeCard();
+            card.Margin = new Padding(0, 0, 0, 8);
+
+            // Section label drawn by card painter
+            var inner = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                Padding = new Padding(10, 24, 10, 6)
+            };
+
+            dragDropPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = DropZoneBg,
+                AllowDrop = true
+            };
+            dragDropPanel.Paint += DragDropPanel_Paint;
+            dragDropPanel.DragEnter += (s, e) =>
+            {
+                if (e.Data.GetDataPresent(DataFormats.FileDrop))
+                {
+                    e.Effect = DragDropEffects.Copy;
+                    dragDropPanel.BackColor = Color.FromArgb(30, 34, 54);
+                    dragDropPanel.Invalidate();
+                }
+            };
+            dragDropPanel.DragLeave += (s, e) =>
+            {
+                dragDropPanel.BackColor = DropZoneBg;
+                dragDropPanel.Invalidate();
+            };
+            dragDropPanel.DragDrop += (s, e) =>
+            {
+                dragDropPanel.BackColor = DropZoneBg;
+                dragDropPanel.Invalidate();
+                if (e.Data.GetDataPresent(DataFormats.FileDrop))
+                    AddFiles((string[])e.Data.GetData(DataFormats.FileDrop));
+            };
+
+            // Header row
+            var header = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 36,
+                BackColor = Color.Transparent,
+                Padding = new Padding(8, 2, 4, 2)
+            };
+
+            var dragLbl = new Label
+            {
+                Text = "Drag & drop CSV / XLSX files here",
+                Dock = DockStyle.Fill,
+                Font = new Font("Segoe UI", 9),
+                ForeColor = TextMuted,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            header.Controls.Add(dragLbl);
+
+            var btnFlow = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Right,
+                Width = 200,
+                FlowDirection = FlowDirection.RightToLeft,
+                WrapContents = false,
+                BackColor = Color.Transparent
+            };
+            var clearBtn = MakeSmallButton("Clear All", AccentRed);
+            clearBtn.Margin = new Padding(6, 1, 0, 1);
+            clearBtn.Click += (s, e) => ClearFiles();
+            btnFlow.Controls.Add(clearBtn);
+            var browseBtn = MakeSmallButton("Browse", AccentBlue);
+            browseBtn.Margin = new Padding(4, 1, 0, 1);
+            browseBtn.Click += (s, e) => UploadFiles();
+            btnFlow.Controls.Add(browseBtn);
+            header.Controls.Add(btnFlow);
+
+            dragDropPanel.Controls.Add(header);
+
+            chipsPanel = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                AutoScroll = true,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = true,
+                Padding = new Padding(6, 2, 6, 2)
+            };
+            dragDropPanel.Controls.Add(chipsPanel);
+
+            inner.Controls.Add(dragDropPanel);
+            card.Tag = "Upload Files";
+            card.Controls.Add(inner);
+            return card;
+        }
+
+        private Panel BuildSettingsSection()
+        {
+            var card = MakeCard();
+            card.Margin = new Padding(0, 0, 0, 8);
+            card.Tag = "Settings";
+
+            var flow = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = true,
+                Padding = new Padding(12, 26, 12, 6),
+                BackColor = Color.Transparent
+            };
+
+            flow.Controls.Add(MakeLabel("Month"));
+            monthComboBox = new ComboBox
+            {
+                Width = 140,
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = BgInput,
+                ForeColor = TextPrimary,
+                Font = new Font("Segoe UI", 9.5f),
+                Margin = new Padding(0, 1, 20, 0)
+            };
+            for (int i = 1; i <= 12; i++)
+                monthComboBox.Items.Add(CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(i));
+            monthComboBox.SelectedIndex = DateTime.Now.Month - 1;
+            flow.Controls.Add(monthComboBox);
+
+            flow.Controls.Add(MakeLabel("Year"));
+            yearInput = new NumericUpDown
+            {
+                Width = 80,
+                Minimum = 2000,
+                Maximum = 2100,
+                Value = DateTime.Now.Year,
+                BackColor = BgInput,
+                ForeColor = TextPrimary,
+                Font = new Font("Segoe UI", 9.5f),
+                BorderStyle = BorderStyle.None,
+                Margin = new Padding(0, 1, 20, 0)
+            };
+            flow.Controls.Add(yearInput);
+
+            flow.Controls.Add(MakeLabel("Holidays"));
+            holidayInput = new NumericUpDown
+            {
+                Width = 60,
+                Minimum = 0,
+                Maximum = 31,
+                Value = 0,
+                BackColor = BgInput,
+                ForeColor = TextPrimary,
+                Font = new Font("Segoe UI", 9.5f),
+                BorderStyle = BorderStyle.None,
+                Margin = new Padding(0, 1, 0, 0)
+            };
+            flow.Controls.Add(holidayInput);
+
+            card.Controls.Add(flow);
+            return card;
+        }
+
+        private Panel BuildPreviewSection()
+        {
+            var card = MakeCard();
+            card.Margin = new Padding(0, 0, 0, 8);
+            card.Tag = "Preview";
+
+            var inner = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                Padding = new Padding(10, 26, 10, 6)
+            };
+
+            dataGridView = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                AllowUserToAddRows = false,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                BackgroundColor = BgCard,
+                GridColor = Border,
+                BorderStyle = BorderStyle.None,
+                ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
+                {
+                    BackColor = Color.FromArgb(32, 36, 56),
+                    ForeColor = AccentBlue,
+                    Font = new Font("Segoe UI Semibold", 9f),
+                    SelectionBackColor = Color.FromArgb(40, 44, 66),
+                    SelectionForeColor = AccentBlue,
+                    Padding = new Padding(4, 3, 4, 3)
+                },
+                DefaultCellStyle = new DataGridViewCellStyle
+                {
+                    BackColor = BgCard,
+                    ForeColor = TextPrimary,
+                    SelectionBackColor = Color.FromArgb(44, 48, 72),
+                    SelectionForeColor = TextPrimary,
+                    Font = new Font("Segoe UI", 9f)
+                },
+                AlternatingRowsDefaultCellStyle = new DataGridViewCellStyle
+                {
+                    BackColor = Color.FromArgb(22, 24, 40),
+                    ForeColor = TextPrimary,
+                    SelectionBackColor = Color.FromArgb(44, 48, 72),
+                    SelectionForeColor = TextPrimary
+                },
+                RowHeadersVisible = false,
+                EnableHeadersVisualStyles = false,
+                CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal,
+                ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single,
+                ColumnHeadersHeight = 32,
+                RowTemplate = { Height = 28 }
+            };
+            inner.Controls.Add(dataGridView);
+
+            // Spinner overlay
+            spinnerPanel = new Panel { Dock = DockStyle.Fill, Visible = false, BackColor = BgCard };
+            spinnerLabel = new Label
+            {
+                Text = "⠋",
+                Font = new Font("Segoe UI", 36, FontStyle.Bold),
+                ForeColor = AccentBlue,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent
+            };
+            spinnerPanel.Controls.Add(spinnerLabel);
+            inner.Controls.Add(spinnerPanel);
+
+            card.Controls.Add(inner);
+            return card;
+        }
+
+        private Panel BuildActionPanel()
+        {
+            var panel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent,
+                Padding = new Padding(0, 4, 0, 0)
+            };
+
+            analyzeButton = MakeButton("⚡  Analyze", AccentBlue, 150);
+            analyzeButton.Dock = DockStyle.Left;
+            analyzeButton.Click += async (s, e) => await AnalyzeFilesAsync();
+
+            // Right-side button group
+            var rightGroup = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Right,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0)
+            };
+
+            var exitBtn = MakeButton("Exit", Color.FromArgb(60, 62, 82), 90);
+            exitBtn.Margin = new Padding(0, 0, 6, 0);
+            exitBtn.Click += (s, e) => Close();
+
+            downloadButton = MakeButton("📥  Download Excel", AccentGreen, 175);
+            downloadButton.Enabled = false;
+            downloadButton.Margin = new Padding(0);
+            downloadButton.Click += (s, e) => DownloadExcel();
+
+            rightGroup.Controls.Add(exitBtn);
+            rightGroup.Controls.Add(downloadButton);
+
+            panel.Controls.Add(analyzeButton);
+            panel.Controls.Add(rightGroup);
+
+            return panel;
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        //  SMALL UI FACTORIES
+        // ══════════════════════════════════════════════════════════════
+
+        private Panel MakeCard()
+        {
+            var card = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent
+            };
+            card.Paint += CardPaint;
+            return card;
+        }
+
+        private void CardPaint(object sender, PaintEventArgs e)
+        {
+            var card = (Panel)sender;
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+
+            var rect = new Rectangle(0, 0, card.Width - 1, card.Height - 1);
+            using (var path = RoundedRect(rect, 10))
+            using (var fill = new SolidBrush(BgCard))
+            using (var pen = new Pen(Border, 1))
+            {
+                e.Graphics.FillPath(fill, path);
+                e.Graphics.DrawPath(pen, path);
+            }
+
+            // Draw section title from Tag
+            var title = card.Tag as string;
+            if (!string.IsNullOrEmpty(title))
+            {
+                using (var f = new Font("Segoe UI Semibold", 9f))
+                using (var b = new SolidBrush(TextMuted))
+                    e.Graphics.DrawString(title, f, b, 14, 6);
             }
         }
 
-        private void CreateFileChip(string filePath)
+        private Label MakeLabel(string text)
         {
-            var chipPanel = new Panel
+            return new Label
             {
-                Size = new System.Drawing.Size(220, 38),
-                BackColor = System.Drawing.Color.FromArgb(59, 130, 246),
-                Margin = new Padding(5, 5, 5, 5),
-                BorderStyle = BorderStyle.None
+                Text = text,
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9f),
+                ForeColor = TextMuted,
+                Margin = new Padding(0, 6, 5, 0)
             };
-
-            var fileNameLabel = new Label
-            {
-                Text = Path.GetFileName(filePath),
-                Location = new System.Drawing.Point(8, 8),
-                Size = new System.Drawing.Size(175, 22),
-                ForeColor = System.Drawing.Color.White,
-                Font = new System.Drawing.Font("Segoe UI", 9),
-                AutoEllipsis = true,
-                TextAlign = System.Drawing.ContentAlignment.MiddleLeft,
-                Tag = filePath
-            };
-            chipPanel.Controls.Add(fileNameLabel);
-
-            var closeButton = new Button
-            {
-                Text = "✕",
-                Location = new System.Drawing.Point(191, 7),
-                Size = new System.Drawing.Size(24, 24),
-                BackColor = System.Drawing.Color.FromArgb(59, 130, 246),
-                ForeColor = System.Drawing.Color.White,
-                FlatStyle = FlatStyle.Flat,
-                Font = new System.Drawing.Font("Segoe UI", 10, System.Drawing.FontStyle.Bold),
-                Cursor = Cursors.Hand,
-                Tag = filePath
-            };
-            closeButton.FlatAppearance.BorderColor = System.Drawing.Color.FromArgb(59, 130, 246);
-            closeButton.FlatAppearance.MouseOverBackColor = System.Drawing.Color.FromArgb(191, 0, 0);
-            closeButton.Click += (s, e) => RemoveFile(filePath);
-            chipPanel.Controls.Add(closeButton);
-
-            chipsPanel.Controls.Add(chipPanel);
         }
 
-        private void RemoveFile(string filePath)
+        private Button MakeButton(string text, Color bg, int width)
         {
-            uploadedFiles.Remove(filePath);
-            UpdateFileListBox();
+            var btn = new Button
+            {
+                Text = text,
+                Width = width,
+                Height = 38,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = bg,
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI Semibold", 9.5f),
+                Cursor = Cursors.Hand,
+                Margin = new Padding(0)
+            };
+            btn.FlatAppearance.BorderSize = 0;
+            btn.FlatAppearance.MouseOverBackColor = ControlPaint.Light(bg, 0.12f);
+            btn.FlatAppearance.MouseDownBackColor = ControlPaint.Dark(bg, 0.08f);
+            btn.Paint += (s, e) =>
+            {
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                using (var path = RoundedRect(new Rectangle(0, 0, btn.Width, btn.Height), 7))
+                    btn.Region = new Region(path);
+            };
+            return btn;
+        }
+
+        private Button MakeSmallButton(string text, Color bg)
+        {
+            var btn = new Button
+            {
+                Text = text,
+                Width = 85,
+                Height = 30,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = bg,
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI Semibold", 8.5f),
+                Cursor = Cursors.Hand,
+                Margin = new Padding(4, 1, 0, 1)
+            };
+            btn.FlatAppearance.BorderSize = 0;
+            btn.FlatAppearance.MouseOverBackColor = ControlPaint.Light(bg, 0.12f);
+            btn.FlatAppearance.MouseDownBackColor = ControlPaint.Dark(bg, 0.08f);
+            btn.Paint += (s, e) =>
+            {
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                using (var path = RoundedRect(new Rectangle(0, 0, btn.Width, btn.Height), 6))
+                    btn.Region = new Region(path);
+            };
+            return btn;
+        }
+
+        private static GraphicsPath RoundedRect(Rectangle bounds, int radius)
+        {
+            int d = radius * 2;
+            var gp = new GraphicsPath();
+            gp.AddArc(bounds.X, bounds.Y, d, d, 180, 90);
+            gp.AddArc(bounds.Right - d, bounds.Y, d, d, 270, 90);
+            gp.AddArc(bounds.Right - d, bounds.Bottom - d, d, d, 0, 90);
+            gp.AddArc(bounds.X, bounds.Bottom - d, d, d, 90, 90);
+            gp.CloseFigure();
+            return gp;
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        //  DRAG-DROP ZONE PAINTING
+        // ══════════════════════════════════════════════════════════════
+
+        private void DragDropPanel_Paint(object sender, PaintEventArgs e)
+        {
+            var p = (Panel)sender;
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using (var pen = new Pen(Color.FromArgb(60, AccentBlue), 1.5f) { DashStyle = DashStyle.Dash })
+            {
+                var r = new Rectangle(3, 3, p.Width - 7, p.Height - 7);
+                using (var path = RoundedRect(r, 6))
+                    e.Graphics.DrawPath(pen, path);
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        //  FILE MANAGEMENT
+        // ══════════════════════════════════════════════════════════════
+
+        private void AddFiles(IEnumerable<string> files)
+        {
+            var valid = files
+                .Where(f => f.EndsWith(".csv", StringComparison.OrdinalIgnoreCase)
+                         || f.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (valid.Count == 0)
+            {
+                MessageBox.Show("Please select only CSV or XLSX files.",
+                    "Invalid Files", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            int dupes = 0;
+            foreach (var f in valid)
+            {
+                if (uploadedFiles.Contains(f, StringComparer.OrdinalIgnoreCase))
+                { dupes++; continue; }
+                uploadedFiles.Add(f);
+            }
+
+            if (dupes > 0)
+            {
+                statusLabel.Text = $"● {dupes} duplicate(s) skipped";
+                statusLabel.ForeColor = AccentOrange;
+            }
+            RefreshChips();
+        }
+
+        private void RefreshChips()
+        {
+            chipsPanel.Controls.Clear();
+            foreach (var f in uploadedFiles)
+                AddChip(f);
+        }
+
+        private void AddChip(string filePath)
+        {
+            var chip = new Panel
+            {
+                Size = new Size(200, 28),
+                BackColor = ChipBg,
+                Margin = new Padding(3, 3, 3, 3),
+                Cursor = Cursors.Default
+            };
+            chip.Paint += (s, e) =>
+            {
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                using (var path = RoundedRect(new Rectangle(0, 0, chip.Width, chip.Height), 14))
+                {
+                    chip.Region = new Region(path);
+                    using (var b = new SolidBrush(ChipBg))
+                        e.Graphics.FillPath(b, path);
+                }
+            };
+
+            var ext = Path.GetExtension(filePath).ToLowerInvariant();
+            var icon = ext == ".xlsx" ? "📗" : "📄";
+
+            var lbl = new Label
+            {
+                Text = $"{icon} {Path.GetFileName(filePath)}",
+                Location = new Point(8, 4),
+                Size = new Size(162, 20),
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI", 8.5f),
+                AutoEllipsis = true,
+                TextAlign = ContentAlignment.MiddleLeft,
+                BackColor = Color.Transparent
+            };
+            chip.Controls.Add(lbl);
+
+            var x = new Button
+            {
+                Text = "✕",
+                Location = new Point(172, 2),
+                Size = new Size(24, 24),
+                BackColor = Color.Transparent,
+                ForeColor = Color.FromArgb(190, 190, 190),
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 8, FontStyle.Bold),
+                Cursor = Cursors.Hand
+            };
+            x.FlatAppearance.BorderSize = 0;
+            x.FlatAppearance.MouseOverBackColor = AccentRed;
+            x.Click += (s, e) => { uploadedFiles.Remove(filePath); RefreshChips(); };
+            chip.Controls.Add(x);
+
+            chipsPanel.Controls.Add(chip);
         }
 
         private void ClearFiles()
         {
-            if (uploadedFiles.Count == 0)
-                return;
-
-            var result = MessageBox.Show(
-                "Are you sure you want to clear all uploaded files?",
-                "Clear All Files",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Question);
-
-            if (result == DialogResult.Yes)
+            if (uploadedFiles.Count == 0) return;
+            if (MessageBox.Show("Clear all files?", "Confirm",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             {
                 uploadedFiles.Clear();
-                UpdateFileListBox();
+                RefreshChips();
+                statusLabel.Text = "● Ready";
+                statusLabel.ForeColor = AccentGreen;
             }
         }
 
         private void UploadFiles()
         {
-            using (var dialog = new OpenFileDialog())
+            using (var d = new OpenFileDialog())
             {
-                dialog.Filter = "CSV and Excel files|*.csv;*.xlsx|CSV files|*.csv|Excel files|*.xlsx";
-                dialog.Multiselect = true;
-                if (dialog.ShowDialog() == DialogResult.OK)
-                {
-                    uploadedFiles = dialog.FileNames.ToList();
-                    UpdateFileListBox();
-                }
+                d.Filter = "Attendance Files|*.csv;*.xlsx|CSV|*.csv|Excel|*.xlsx";
+                d.Multiselect = true;
+                if (d.ShowDialog() == DialogResult.OK)
+                    AddFiles(d.FileNames);
             }
         }
 
-        private void AnalyzeFiles()
+        // ══════════════════════════════════════════════════════════════
+        //  ANALYSIS (async)
+        // ══════════════════════════════════════════════════════════════
+
+        private async Task AnalyzeFilesAsync()
         {
             if (uploadedFiles.Count == 0)
             {
-                MessageBox.Show("Please upload at least one file.", "No Files", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Upload at least one file.", "No Files",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
-            progressBar.Visible = true;
-            statusLabel.Text = "Processing...";
-            statusLabel.ForeColor = System.Drawing.Color.Orange;
+            analyzeButton.Enabled = false;
             downloadButton.Enabled = false;
-            
-            // Show spinner in preview
+            progressBar.Visible = true;
+            statusLabel.Text = "● Processing…";
+            statusLabel.ForeColor = AccentOrange;
+
             spinnerIndex = 0;
             spinnerPanel.Visible = true;
             spinnerLabel.Visible = true;
             dataGridView.Visible = false;
             spinnerPanel.BringToFront();
-            if (!spinnerTimer.Enabled)
-                spinnerTimer.Start();
+            spinnerTimer.Start();
 
             try
             {
                 int month = monthComboBox.SelectedIndex + 1;
                 int year = (int)yearInput.Value;
                 int holidays = (int)holidayInput.Value;
+                var copy = uploadedFiles.ToList();
 
-                var summary = ExcelHelper.ProcessAttendanceFiles(uploadedFiles, year, month, holidays);
+                var summary = await Task.Run(() =>
+                    ExcelHelper.ProcessAttendanceFiles(copy, year, month, holidays));
 
                 if (summary.Count == 0)
                 {
-                    // Hide spinner on no data
-                    spinnerTimer.Stop();
-                    spinnerPanel.Visible = false;
-                    spinnerLabel.Visible = false;
-                    dataGridView.Visible = true;
-                    
-                    MessageBox.Show("No attendance data found for the selected month.", "No Data", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    statusLabel.Text = "No data found";
-                    statusLabel.ForeColor = System.Drawing.Color.Red;
+                    HideSpinner();
+                    MessageBox.Show("No attendance data found for the selected month.",
+                        "No Data", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    statusLabel.Text = "● No data found";
+                    statusLabel.ForeColor = AccentRed;
                     return;
                 }
 
-                // Hide spinner and show preview
-                spinnerTimer.Stop();
-                spinnerPanel.Visible = false;
-                spinnerLabel.Visible = false;
-                dataGridView.Visible = true;
-                
-                // Show preview
+                HideSpinner();
                 dataGridView.DataSource = summary.Take(200).ToList();
 
-                excelBytes = ExcelHelper.BuildExcelWorkbook(summary, month, year);
+                excelBytes = await Task.Run(() =>
+                    ExcelHelper.BuildExcelWorkbook(summary, month, year));
 
-                statusLabel.Text = "Analysis complete! Ready to download.";
-                statusLabel.ForeColor = System.Drawing.Color.Green;
+                statusLabel.Text = $"● Done — {summary.Count} records ready";
+                statusLabel.ForeColor = AccentGreen;
                 downloadButton.Enabled = true;
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                statusLabel.Text = "Error occurred";
-                statusLabel.ForeColor = System.Drawing.Color.Red;
-                
-                // Hide spinner on error
-                spinnerTimer.Stop();
-                spinnerPanel.Visible = false;
-                spinnerLabel.Visible = false;
-                dataGridView.Visible = true;
+                HideSpinner();
+                MessageBox.Show($"Error: {ex.Message}", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                statusLabel.Text = "● Error";
+                statusLabel.ForeColor = AccentRed;
             }
             finally
             {
                 progressBar.Visible = false;
+                analyzeButton.Enabled = true;
             }
         }
+
+        private void HideSpinner()
+        {
+            spinnerTimer.Stop();
+            spinnerPanel.Visible = false;
+            spinnerLabel.Visible = false;
+            dataGridView.Visible = true;
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        //  DOWNLOAD
+        // ══════════════════════════════════════════════════════════════
 
         private void DownloadExcel()
         {
             if (excelBytes == null)
             {
-                MessageBox.Show("No data to download. Please run analysis first.", "No Data", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Run analysis first.", "No Data",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-
-            using (var dialog = new SaveFileDialog())
+            using (var d = new SaveFileDialog())
             {
-                var monthName = CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(monthComboBox.SelectedIndex + 1);
-                dialog.FileName = $"{monthName.ToUpper()}_summary.xlsx";
-                dialog.Filter = "Excel files|*.xlsx";
-
-                if (dialog.ShowDialog() == DialogResult.OK)
+                var m = CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(monthComboBox.SelectedIndex + 1);
+                d.FileName = $"{m.ToUpper()}_summary.xlsx";
+                d.Filter = "Excel|*.xlsx";
+                if (d.ShowDialog() == DialogResult.OK)
                 {
-                    File.WriteAllBytes(dialog.FileName, excelBytes);
-                    MessageBox.Show($"File saved to:\n{dialog.FileName}", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
-            }
-        }
-
-        private void ToggleInfoCard()
-        {
-            try
-            {
-                infoCardExpanded = !infoCardExpanded;
-
-                if (infoCardExpanded && infoCardPanel.Controls.Count == 0)
-                {
-                    PopulateInfoCard();
-                }
-
-                if (infoCardTimer != null)
-                {
-                    infoCardTimer.Start();
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error toggling info card: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void InfoCardTimer_Tick(object sender, EventArgs e)
-        {
-            int targetHeight = infoCardExpanded ? INFO_CARD_MAX_HEIGHT : 0;
-            int step = 10;
-
-            if (infoCardExpanded)
-            {
-                if (infoCardPanel.Height < targetHeight)
-                {
-                    infoCardPanel.Height = Math.Min(infoCardPanel.Height + step, targetHeight);
-                }
-                else
-                {
-                    infoCardTimer.Stop();
-                }
-            }
-            else
-            {
-                if (infoCardPanel.Height > targetHeight)
-                {
-                    infoCardPanel.Height = Math.Max(infoCardPanel.Height - step, targetHeight);
-                }
-                else
-                {
-                    infoCardTimer.Stop();
-                }
-            }
-
-            infoCardPanel.Invalidate();
-        }
-
-        private void PopulateInfoCard()
-        {
-            infoCardPanel.Controls.Clear();
-
-            int yPos = 10;
-
-            // App icon at top
-            if (File.Exists("icon.ico"))
-            {
-                var iconPictureBox = new PictureBox
-                {
-                    Image = new System.Drawing.Bitmap("icon.ico"),
-                    Size = new System.Drawing.Size(60, 60),
-                    Location = new System.Drawing.Point(10, yPos),
-                    SizeMode = PictureBoxSizeMode.StretchImage
-                };
-                infoCardPanel.Controls.Add(iconPictureBox);
-                yPos += 70;
-            }
-
-            // Developed by label
-            var developerLabel = new Label
-            {
-                Text = "Developed by:",
-                Font = new System.Drawing.Font("Segoe UI", 9, System.Drawing.FontStyle.Bold),
-                ForeColor = System.Drawing.Color.FromArgb(59, 130, 246),
-                Location = new System.Drawing.Point(10, yPos),
-                AutoSize = true
-            };
-            infoCardPanel.Controls.Add(developerLabel);
-            yPos += 22;
-
-            // Developer name
-            var developerNameTextBox = new TextBox
-            {
-                Text = "Chrispen Dery",
-                Font = new System.Drawing.Font("Segoe UI", 10),
-                Location = new System.Drawing.Point(10, yPos),
-                Width = 300,
-                Height = 25,
-                ReadOnly = true,
-                BorderStyle = BorderStyle.None,
-                BackColor = System.Drawing.Color.White,
-                ForeColor = System.Drawing.Color.Black,
-                Cursor = Cursors.Hand
-            };
-            infoCardPanel.Controls.Add(developerNameTextBox);
-            yPos += 35;
-
-            // Email label
-            var emailLabel = new Label
-            {
-                Text = "Email:",
-                Font = new System.Drawing.Font("Segoe UI", 9, System.Drawing.FontStyle.Bold),
-                ForeColor = System.Drawing.Color.FromArgb(59, 130, 246),
-                Location = new System.Drawing.Point(10, yPos),
-                AutoSize = true
-            };
-            infoCardPanel.Controls.Add(emailLabel);
-            yPos += 22;
-
-            // Email value
-            var emailValueTextBox = new TextBox
-            {
-                Text = "derychrispen72@gmail.com",
-                Font = new System.Drawing.Font("Segoe UI", 9),
-                Location = new System.Drawing.Point(10, yPos),
-                Width = 300,
-                Height = 25,
-                ReadOnly = true,
-                BorderStyle = BorderStyle.None,
-                BackColor = System.Drawing.Color.White,
-                ForeColor = System.Drawing.Color.FromArgb(30, 144, 255),
-                Cursor = Cursors.Hand
-            };
-            emailValueTextBox.Click += (s, e) =>
-            {
-                try
-                {
-                    var psi = new System.Diagnostics.ProcessStartInfo
+                    try
                     {
-                        FileName = "mailto:derychrispen72@gmail.com",
-                        UseShellExecute = true
-                    };
-                    System.Diagnostics.Process.Start(psi);
-                }
-                catch
-                {
-                    MessageBox.Show("Could not open email client. Please check your email settings.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                }
-            };
-            emailValueTextBox.DoubleClick += (s, e) =>
-            {
-                try
-                {
-                    var psi = new System.Diagnostics.ProcessStartInfo
+                        File.WriteAllBytes(d.FileName, excelBytes);
+                        MessageBox.Show($"Saved to:\n{d.FileName}", "Success",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                    catch (Exception ex)
                     {
-                        FileName = "mailto:derychrispen72@gmail.com",
-                        UseShellExecute = true
-                    };
-                    System.Diagnostics.Process.Start(psi);
-                }
-                catch
-                {
-                    MessageBox.Show("Could not open email client. Please check your email settings.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                }
-            };
-            infoCardPanel.Controls.Add(emailValueTextBox);
-            yPos += 35;
-
-            // Contact label
-            var contactLabel = new Label
-            {
-                Text = "Contact:",
-                Font = new System.Drawing.Font("Segoe UI", 9, System.Drawing.FontStyle.Bold),
-                ForeColor = System.Drawing.Color.FromArgb(59, 130, 246),
-                Location = new System.Drawing.Point(10, yPos),
-                AutoSize = true
-            };
-            infoCardPanel.Controls.Add(contactLabel);
-            yPos += 22;
-
-            // Contact value
-            var contactValueTextBox = new TextBox
-            {
-                Text = "+233 55 0722 898",
-                Font = new System.Drawing.Font("Segoe UI", 10),
-                Location = new System.Drawing.Point(10, yPos),
-                Width = 300,
-                Height = 25,
-                ReadOnly = true,
-                BorderStyle = BorderStyle.None,
-                BackColor = System.Drawing.Color.White,
-                ForeColor = System.Drawing.Color.Black,
-                Cursor = Cursors.Hand
-            };
-            contactValueTextBox.Click += (s, e) =>
-            {
-                try
-                {
-                    System.Windows.Forms.Clipboard.SetText("+233 55 0722 898");
-                    MessageBox.Show("Phone number copied to clipboard!", "Copied", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
-                catch { }
-            };
-            infoCardPanel.Controls.Add(contactValueTextBox);
-
-            // Add mouse down handler to main form to detect clicks
-            mainPanel.MouseDown += (s, e) =>
-            {
-                if (infoCardExpanded)
-                {
-                    // Check if click is outside the info card and button
-                    Point globalLoc = this.PointToClient(System.Windows.Forms.Control.MousePosition);
-                    Rectangle infoCardBounds = infoCardPanel.Bounds;
-                    Rectangle infoButtonBounds = infoButton.Bounds;
-                    
-                    if (!infoCardBounds.Contains(globalLoc) && !infoButtonBounds.Contains(globalLoc))
-                    {
-                        infoCardExpanded = false;
-                        if (infoCardTimer != null)
-                        {
-                            infoCardTimer.Start();
-                        }
+                        MessageBox.Show($"Save failed: {ex.Message}", "Error",
+                            MessageBoxButtons.OK, MessageBoxIcon.Error);
                     }
                 }
-            };
-        }
-
-        private void CloseInfoCardIfNeeded(MouseEventArgs e)
-        {
-            if (!infoCardExpanded)
-                return;
-
-            // Check if click is on the info button or info card panel
-            Rectangle infoButtonBounds = infoButton.Bounds;
-            Rectangle infoCardBounds = infoCardPanel.Bounds;
-
-            bool clickedOnButton = infoButtonBounds.Contains(e.Location);
-            bool clickedOnCard = infoCardBounds.Contains(e.Location);
-
-            // Close the card if clicked outside of it and the button
-            if (!clickedOnButton && !clickedOnCard)
-            {
-                infoCardExpanded = false;
-                if (infoCardTimer != null)
-                {
-                    infoCardTimer.Start();
-                }
-            }
-        }
-
-        private void SpinnerTimer_Tick(object sender, EventArgs e)
-        {
-            if (spinnerLabel != null && spinnerLabel.Visible)
-            {
-                spinnerLabel.Text = spinnerFrames[spinnerIndex];
-                spinnerIndex = (spinnerIndex + 1) % spinnerFrames.Length;
             }
         }
     }
